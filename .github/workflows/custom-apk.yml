@@ -96,7 +96,6 @@ jobs:
   release:
     name: Build signed Lite release APK
     runs-on: ubuntu-latest
-    needs: build
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -161,7 +160,7 @@ jobs:
           REPORT="app/build/outputs/apk/lite/release/release-signing.txt"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$REPORT"
 
-          ACTUAL_CERT="$("$APKSIGNER" verify --print-certs "$APK"             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'             | head -n 1             | tr -d ':[:space:]'             | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_CERT="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$REPORT"             | head -n 1             | tr -d ':[:space:]'             | tr '[:upper:]' '[:lower:]')"
 
           if [ -z "$ACTUAL_CERT" ]; then
             echo "::error::Could not read signer SHA-256 from APK"
