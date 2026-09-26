@@ -91,4 +91,4 @@ fun updateContent(sync: Boolean) {
 
 ## CI-сборка этой ветки
 
-Для проверки кастомизации в ветке есть `.github/workflows/custom-apk.yml`. Он собирает подписанный `Lite release APK` без публикации GitHub Release и сохраняет APK как workflow artifact.
+Для проверки кастомизации в ветке есть `.github/workflows/custom-apk.yml`. Он собирает `Lite Debug APK` без публикации GitHub Release и сохраняет APK как workflow artifact. Debug APK подписывается стандартным debug-ключом CI, поэтому поверх установленного release APK с другой подписью его обычно нужно ставить после удаления старой версии.
