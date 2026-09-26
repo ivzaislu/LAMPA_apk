@@ -91,3 +91,106 @@ jobs:
           profile: tv_1080p
           disable-animations: true
           script: ./gradlew connectedLiteDebugAndroidTest --stacktrace
+
+
+  release:
+    name: Build signed Lite release APK
+    runs-on: ubuntu-latest
+    needs: verify-tv-channels-off
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      RELEASE_SIGN_KEY_ALIAS: ${{ secrets.RELEASE_SIGN_KEY_ALIAS }}
+      RELEASE_SIGN_KEY_PASSWORD: ${{ secrets.RELEASE_SIGN_KEY_PASSWORD }}
+      RELEASE_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Restore release keystore from GitHub Secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD RELEASE_SIGN_KEY_ALIAS RELEASE_SIGN_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required GitHub Actions secret $name is missing or empty"
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/lampa-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+
+          keytool -list             -keystore "$KEYSTORE_PATH"             -storepass "$KEYSTORE_PASSWORD"             -alias "$RELEASE_SIGN_KEY_ALIAS" >/dev/null
+
+          echo "KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Grant execute permission for Gradle
+        run: chmod +x gradlew
+
+      - name: Verify Android TV OFF guard coverage
+        run: python3 scripts/verify_tv_channels_off.py
+
+      - name: Build signed Lite release APK
+        run: ./gradlew assembleLiteRelease --stacktrace
+
+      - name: Verify APK signature and certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/lite/release/app-lite-release.apk"
+          test -s "$APK"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner was not found"
+            exit 1
+          fi
+
+          REPORT="app/build/outputs/apk/lite/release/release-signing.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$REPORT"
+
+          ACTUAL_CERT="$("$APKSIGNER" verify --print-certs "$APK"             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'             | head -n 1             | tr -d ':[:space:]'             | tr '[:upper:]' '[:lower:]')"
+
+          if [ -z "$ACTUAL_CERT" ]; then
+            echo "::error::Could not read signer SHA-256 from APK"
+            exit 1
+          fi
+
+          echo "APK signer SHA-256: $ACTUAL_CERT" | tee -a "$REPORT"
+
+          if [ -n "${RELEASE_CERT_SHA256:-}" ]; then
+            EXPECTED_CERT="$(printf '%s' "$RELEASE_CERT_SHA256"               | tr -d ':[:space:]'               | tr '[:upper:]' '[:lower:]')"
+            if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+              echo "::error::Release APK certificate does not match RELEASE_CERT_SHA256"
+              echo "Expected: $EXPECTED_CERT"
+              echo "Actual:   $ACTUAL_CERT"
+              exit 1
+            fi
+            echo "Certificate matches RELEASE_CERT_SHA256." | tee -a "$REPORT"
+          else
+            echo "::warning::RELEASE_CERT_SHA256 is empty; signature is valid but old-certificate equality was not checked." | tee -a "$REPORT"
+          fi
+
+          sha256sum "$APK" | tee "app/build/outputs/apk/lite/release/app-lite-release.apk.sha256"
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lampa-custom-lite-release
+          path: |
+            app/build/outputs/apk/lite/release/app-lite-release.apk
+            app/build/outputs/apk/lite/release/app-lite-release.apk.sha256
+            app/build/outputs/apk/lite/release/release-signing.txt
+          if-no-files-found: error
+          retention-days: 14
