@@ -25,7 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Scheduler {
     private const val CARDS_JOB_ID = 0
-    private val FULL_REFRESH_INTERVAL_MS = TimeUnit.HOURS.toMillis(1)
     private val isUpdate = AtomicBoolean(false)
 
     private val schedulerScope = CoroutineScope(Dispatchers.IO)
@@ -36,15 +35,12 @@ object Scheduler {
      * @param sched Whether to schedule updates or perform a one-shot update.
      */
     fun scheduleUpdate(sched: Boolean) {
-        if (!isAndroidTV) return
-
-        if (BuildConfig.DEBUG) Log.d("Scheduler", "scheduleUpdate(sched: $sched)")
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            jobScheduler(sched)
-        } else {
-            alarmScheduler()
-        }
+        // Intentionally disabled.
+        //
+        // Full Android TV channel refreshes caused background TvProvider work to compete
+        // with Lampa's primary flow. Keep only event-driven channel updates from AndroidJS.
+        // See docs/ANDROID_TV_CHANNEL_REFRESH.md before re-enabling this.
+        return
     }
 
     /**
@@ -63,7 +59,7 @@ object Scheduler {
                 CARDS_JOB_ID,
                 ComponentName(context, ContentJobService::class.java)
             ).apply {
-                setPeriodic(FULL_REFRESH_INTERVAL_MS) // Event-driven updates handle fresh changes; this is a fallback refresh
+                setPeriodic(TimeUnit.MINUTES.toMillis(15)) // Schedule every 15 minutes
                 setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY) // Require any network
                 setRequiresDeviceIdle(false) // Don't require device to be idle
                 setRequiresCharging(false) // Don't require device to be charging
@@ -122,24 +118,11 @@ object Scheduler {
      */
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     fun updateContent(sync: Boolean) {
-        if (!isUpdate.compareAndSet(false, true))
-            return // Early return if update is already running
-        try {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                if (BuildConfig.DEBUG) Log.d(
-                    "Scheduler",
-                    "updateContent call RecsService.updateRecs()"
-                )
-                RecsService.updateRecs() // Update recommendations for older versions
-            } else {
-                if (BuildConfig.DEBUG) Log.d(
-                    "Scheduler",
-                    "updateContent call LampaChannels.update($sync)"
-                )
-                LampaChannels.update(sync) // Update channels for newer versions
-            }
-        } finally {
-            isUpdate.set(false)
-        }
+        // Intentionally disabled for the same reason as scheduleUpdate().
+        // Event-driven updates remain active in AndroidJS:
+        // - updateRecsChannel()
+        // - updateChanByName()
+        // - updateWatchNext()
+        return
     }
 }
