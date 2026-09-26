@@ -23,3 +23,6 @@ System requirements: Android 4.1+ (API level 16+)
 ### Last release links:
 - [Release page](https://github.com/lampa-app/LAMPA/releases/latest)
 - [Direct apk download link](https://github.com/lampa-app/LAMPA/releases/latest/download/app-lite-release.apk)
+
+### Custom Android TV channel behavior
+- [Android TV channel refresh policy](docs/ANDROID_TV_CHANNEL_REFRESH.md)
