@@ -92,3 +92,5 @@ fun updateContent(sync: Boolean) {
 ## CI-сборка этой ветки
 
 Для проверки кастомизации в ветке есть `.github/workflows/custom-apk.yml`. Он собирает `Lite Debug APK` без публикации GitHub Release и сохраняет APK как workflow artifact. Debug APK подписывается стандартным debug-ключом CI, поэтому поверх установленного release APK с другой подписью его обычно нужно ставить после удаления старой версии.
+
+Примечание по CI: проект вычисляет версию через git refs, поэтому checkout должен быть с `fetch-depth: 0`. Кроме того, `app/build.gradle` конфигурирует release signing даже при debug-сборке, поэтому workflow создаёт временный локальный keystore только для прохождения Gradle-конфигурации.
