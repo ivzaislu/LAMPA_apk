@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Scheduler {
     private const val CARDS_JOB_ID = 0
+    private val FULL_REFRESH_INTERVAL_MS = TimeUnit.HOURS.toMillis(1)
     private val isUpdate = AtomicBoolean(false)
 
     private val schedulerScope = CoroutineScope(Dispatchers.IO)
@@ -62,7 +63,7 @@ object Scheduler {
                 CARDS_JOB_ID,
                 ComponentName(context, ContentJobService::class.java)
             ).apply {
-                setPeriodic(TimeUnit.MINUTES.toMillis(15)) // Schedule every 15 minutes
+                setPeriodic(FULL_REFRESH_INTERVAL_MS) // Event-driven updates handle fresh changes; this is a fallback refresh
                 setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY) // Require any network
                 setRequiresDeviceIdle(false) // Don't require device to be idle
                 setRequiresCharging(false) // Don't require device to be charging
