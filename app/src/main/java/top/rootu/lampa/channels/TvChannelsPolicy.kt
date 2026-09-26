@@ -14,8 +14,13 @@ import top.rootu.lampa.helpers.Prefs.androidTvChannelsEnabled
  */
 object TvChannelsPolicy {
 
+    // User-facing master switch. This also covers the legacy pre-O recommendation path.
+    val requestedEnabled: Boolean
+        get() = App.context.androidTvChannelsEnabled
+
+    // Modern TvProvider integration is available only when both the switch and provider are active.
     val enabled: Boolean
-        get() = App.context.androidTvChannelsEnabled && isTvContentProviderAvailable
+        get() = requestedEnabled && isTvContentProviderAvailable
 
     fun setEnabled(value: Boolean) {
         App.context.androidTvChannelsEnabled = value
