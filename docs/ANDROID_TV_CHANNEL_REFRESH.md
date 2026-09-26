@@ -88,3 +88,7 @@ fun updateContent(sync: Boolean) {
 - но публичные `Scheduler.scheduleUpdate()` и `Scheduler.updateContent()` завершаются сразу, поэтому массовый Scheduler фактически отключён.
 
 Это и является эталонной кастомизацией для этой ветки.
+
+## CI-сборка этой ветки
+
+Для проверки кастомизации в ветке есть `.github/workflows/custom-apk.yml`. Он собирает подписанный `Lite release APK` без публикации GitHub Release и сохраняет APK как workflow artifact.
