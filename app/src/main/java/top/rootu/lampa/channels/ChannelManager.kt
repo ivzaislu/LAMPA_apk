@@ -20,9 +20,13 @@ import top.rootu.lampa.content.LampaProvider.RECS
 import top.rootu.lampa.content.LampaProvider.SCHD
 import top.rootu.lampa.content.LampaProvider.THRW
 import top.rootu.lampa.content.LampaProvider.VIEW
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import top.rootu.lampa.helpers.ChannelHelper
-import top.rootu.lampa.helpers.Coroutines
 import top.rootu.lampa.helpers.Helpers.buildPendingIntent
+import java.util.concurrent.atomic.AtomicBoolean
 import top.rootu.lampa.helpers.Helpers.getDefaultPosterUri
 import top.rootu.lampa.helpers.capitalizeFirstLetter
 import top.rootu.lampa.helpers.data
@@ -31,6 +35,9 @@ import top.rootu.lampa.models.LampaCard
 object ChannelManager {
     private const val TAG = "ChannelManager"
     private val lock = Any()
+    private val pendingUpdates = LinkedHashMap<String, List<LampaCard>>()
+    private val workerRunning = AtomicBoolean(false)
+    private val channelScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @SuppressLint("RestrictedApi")
     private val PREVIEW_PROGRAM_MAP_PROJECTION = arrayOf(
@@ -60,7 +67,48 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     fun update(name: String, list: List<LampaCard>) {
-        if (BuildConfig.DEBUG) Log.d(TAG, "update($name, ${list.size} items)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "queue update($name, ${list.size} items)")
+
+        synchronized(pendingUpdates) {
+            // Keep only the latest state for each channel while the worker is busy.
+            pendingUpdates[name] = list
+        }
+        startUpdateWorker()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun startUpdateWorker() {
+        if (!workerRunning.compareAndSet(false, true)) return
+
+        channelScope.launch {
+            try {
+                while (true) {
+                    val next = synchronized(pendingUpdates) {
+                        // Recommendations are the primary Android TV channel, so process them first.
+                        val nextName = when {
+                            pendingUpdates.containsKey(RECS) -> RECS
+                            else -> pendingUpdates.keys.firstOrNull()
+                        } ?: return@synchronized null
+
+                        nextName to pendingUpdates.remove(nextName).orEmpty()
+                    } ?: break
+
+                    updateNow(next.first, next.second)
+                }
+            } finally {
+                workerRunning.set(false)
+
+                // Close the race where a new update arrived just as the worker finished.
+                val hasPending = synchronized(pendingUpdates) { pendingUpdates.isNotEmpty() }
+                if (hasPending) startUpdateWorker()
+            }
+        }
+    }
+
+    @SuppressLint("RestrictedApi")
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun updateNow(name: String, list: List<LampaCard>) {
+        if (BuildConfig.DEBUG) Log.d(TAG, "updateNow($name, ${list.size} items)")
         removeLostChannels()
 
         synchronized(lock) {
@@ -70,18 +118,9 @@ object ChannelManager {
                 ChannelHelper.get(name)
             } ?: return@synchronized
 
-            // Update channel metadata
             updateChannelMetadata(channel, displayName)
-
-            // Add programs to the channel
-            if (!Coroutines.running("update_channel_$name")) { // fix duplicates
-                Coroutines.launch("update_channel_$name") {
-                    clearChannelPrograms(channel.id)
-                    addProgramsToChannel(channel.id, name, list)
-                }
-            } else {
-                if (BuildConfig.DEBUG) Log.d(TAG, "scope update_channel_$name already active!")
-            }
+            clearChannelPrograms(channel.id)
+            addProgramsToChannel(channel.id, name, list)
         }
     }
 
@@ -126,16 +165,18 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     private fun addProgramsToChannel(channelId: Long, provName: String, list: List<LampaCard>) {
-        list.forEachIndexed { index, card ->
-            val program = createPreviewProgram(channelId, provName, card, list.size - index)
+        // The channel was cleared immediately before this call, so querying it for every
+        // program is unnecessary and turns a refresh into O(n²) ContentResolver work.
+        val uniqueItems = list.distinctBy { it.id }
+
+        uniqueItems.forEachIndexed { index, card ->
+            val program = createPreviewProgram(
+                channelId,
+                provName,
+                card,
+                uniqueItems.size - index
+            )
             program?.let {
-                if (existsInChannel(channelId, it.internalProviderId)) {
-                    if (BuildConfig.DEBUG) Log.d(
-                        TAG,
-                        "Program ${it.internalProviderId} already exists in channel $channelId, removing..."
-                    )
-                    deleteFromChannel(channelId, it.internalProviderId)
-                }
                 App.context.contentResolver.insert(
                     TvContractCompat.buildPreviewProgramsUriForChannel(channelId),
                     it.toContentValues()
@@ -193,11 +234,6 @@ object ChannelManager {
             }
         }
         return null
-    }
-
-    @SuppressLint("RestrictedApi")
-    private fun existsInChannel(channelId: Long, movieId: String): Boolean {
-        return findProgramByMovieId(channelId, movieId) != null
     }
 
     private fun removeProgram(previewProgramId: Long): Int {
