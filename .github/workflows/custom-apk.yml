@@ -103,6 +103,7 @@ jobs:
       RELEASE_SIGN_KEY_ALIAS: ${{ secrets.RELEASE_SIGN_KEY_ALIAS }}
       RELEASE_SIGN_KEY_PASSWORD: ${{ secrets.RELEASE_SIGN_KEY_PASSWORD }}
       RELEASE_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+      OLD_APK_CERT_SHA256: c8066a995babbd0879cc3534ea92502e7ca220391ead03a3314c24d58acce370
 
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +169,13 @@ jobs:
           fi
 
           echo "APK signer SHA-256: $ACTUAL_CERT" | tee -a "$REPORT"
+
+          if [ "$ACTUAL_CERT" = "$OLD_APK_CERT_SHA256" ]; then
+            echo "Certificate matches the previously uploaded old APK." | tee -a "$REPORT"
+          else
+            echo "::warning::Signer does NOT match the previously uploaded old APK; this release cannot update that APK in place." | tee -a "$REPORT"
+            echo "Old APK certificate: $OLD_APK_CERT_SHA256" | tee -a "$REPORT"
+          fi
 
           if [ -n "${RELEASE_CERT_SHA256:-}" ]; then
             EXPECTED_CERT="$(printf '%s' "$RELEASE_CERT_SHA256"               | tr -d ':[:space:]'               | tr '[:upper:]' '[:lower:]')"
