@@ -21,6 +21,7 @@ import com.bumptech.glide.Glide
 import top.rootu.lampa.App
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.R
+import top.rootu.lampa.channels.TvChannelsPolicy
 import top.rootu.lampa.content.LampaProvider
 import top.rootu.lampa.helpers.Helpers.buildPendingIntent
 import top.rootu.lampa.helpers.Helpers.getDefaultPosterUri
@@ -43,7 +44,7 @@ object RecsService {
 
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     fun updateRecs() {
-        if (!isAndroidTV) return
+        if (!TvChannelsPolicy.requestedEnabled || !isAndroidTV) return
 
         val context = App.context
         val notificationManager =
