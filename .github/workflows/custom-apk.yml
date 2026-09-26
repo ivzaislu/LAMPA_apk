@@ -9,15 +9,9 @@ on:
 permissions:
   contents: read
 
-env:
-  KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-  RELEASE_SIGN_KEY_ALIAS: ${{ secrets.RELEASE_SIGN_KEY_ALIAS }}
-  RELEASE_SIGN_KEY_PASSWORD: ${{ secrets.RELEASE_SIGN_KEY_PASSWORD }}
-
 jobs:
   build:
-    name: Build custom Lite APK
+    name: Build custom Lite debug APK
     runs-on: ubuntu-latest
 
     steps:
@@ -30,23 +24,17 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Checkout keystore
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ secrets.KEYSTORE_GIT_REPOSITORY }}
-          token: ${{ secrets.KEYSTORE_ACCESS_TOKEN }}
-          path: app/keystore
 
       - name: Grant execute permission for Gradle
         run: chmod +x gradlew
 
-      - name: Build Lite release APK
-        run: ./gradlew assembleLiteRelease --stacktrace
+      - name: Build Lite debug APK
+        run: ./gradlew assembleLiteDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: lampa-custom-lite-release
-          path: app/build/outputs/apk/lite/release/app-lite-release.apk
+          name: lampa-custom-lite-debug
+          path: app/build/outputs/apk/lite/debug/app-lite-debug.apk
           if-no-files-found: error
           retention-days: 14
