@@ -32,6 +32,10 @@ object ChannelManager {
     private const val TAG = "ChannelManager"
     private val lock = Any()
 
+    private val LAMPA_CHANNEL_NAMES = setOf(
+        RECS, LIKE, BOOK, HIST, LOOK, VIEW, SCHD, CONT, THRW
+    )
+
     @SuppressLint("RestrictedApi")
     private val PREVIEW_PROGRAM_MAP_PROJECTION = arrayOf(
         TvContractCompat.BaseTvColumns._ID,
@@ -98,7 +102,9 @@ object ChannelManager {
     @RequiresApi(Build.VERSION_CODES.O)
     fun removeAll() {
         synchronized(lock) {
-            ChannelHelper.list().forEach { ChannelHelper.rem(it) }
+            ChannelHelper.list()
+                .filter { it.data in LAMPA_CHANNEL_NAMES }
+                .forEach { ChannelHelper.rem(it) }
         }
     }
 
