@@ -3596,7 +3596,7 @@ class MainActivity : BaseActivity(),
      * Updates Watch Next on Android TV.
      */
     private suspend fun updatePlayNext(ended: Boolean) = withContext(Dispatchers.Default) {
-        if (!isTvContentProviderAvailable) return@withContext
+        if (!TvChannelsPolicy.enabled) return@withContext
         try {
             val card = getCardFromActivity(lampaActivity) ?: return@withContext
             // Get current playback state
