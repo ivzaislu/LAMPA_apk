@@ -96,7 +96,7 @@ jobs:
   release:
     name: Build signed Lite release APK
     runs-on: ubuntu-latest
-    needs: verify-tv-channels-off
+    needs: build
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
