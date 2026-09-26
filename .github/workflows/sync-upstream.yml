@@ -1,0 +1,59 @@
+name: Sync upstream main
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge lampa-app/LAMPA main into custom branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: optimize-tv-channel-updates
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+
+          UPSTREAM_TAG="$(git describe --tags --abbrev=0 upstream/main)"
+          case "$UPSTREAM_TAG" in
+            v1.*) ;;
+            *)
+              echo "::error::Upstream main moved outside the supported 1.x line: $UPSTREAM_TAG"
+              exit 1
+              ;;
+          esac
+          echo "Upstream version: $UPSTREAM_TAG"
+
+      - name: Fast-forward fork main
+        run: git push origin upstream/main:refs/heads/main
+
+      - name: Merge upstream main into custom branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Custom branch already contains upstream/main."
+            exit 0
+          fi
+
+          git merge --no-edit upstream/main
+          python3 scripts/verify_tv_channels_off.py
+          python3 scripts/verify_update_channel.py
+          git push origin HEAD:refs/heads/optimize-tv-channel-updates
