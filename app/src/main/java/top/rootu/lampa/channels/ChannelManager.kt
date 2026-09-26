@@ -155,12 +155,11 @@ object ChannelManager {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun removeLostChannels() {
         synchronized(lock) {
-            // Remove channels with null data
-            ChannelHelper.list().filter { it.internalProviderDataByteArray == null }.forEach {
-                ChannelHelper.rem(it)
-            }
-            // Remove duplicate channels
             val channels = ChannelHelper.list()
+                .filter { it.data in LAMPA_CHANNEL_NAMES }
+
+            // Remove duplicate Lampa channels only. Do not touch channels
+            // belonging to other applications visible through TvProvider.
             val duplicates = channels.groupBy { it.data }.values.filter { it.size > 1 }
             duplicates.flatten().distinctBy { it.id }.forEach {
                 ChannelHelper.rem(it)
