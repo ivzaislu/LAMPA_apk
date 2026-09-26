@@ -321,18 +321,16 @@ jobs:
           sha256sum "$RELEASE_APK" > "$RELEASE_SHA"
           cp "$SIGNING_REPORT" "$RELEASE_REPORT"
 
-          NOTES="$(cat <<EOF
-Custom LAMPA build based on upstream $UPSTREAM_TAG.
-
-- APK versionName is inherited from lampa-app/LAMPA main: $VERSION
-- APK versionCode is inherited from the origin/main commit count
-- In-app updates are read from ivzaislu/LAMPA_apk releases
-- Android TV Home channels are disabled by default and protected by CI runtime tests
-- Release signing certificate is verified against RELEASE_CERT_SHA256
-
-This custom release is published only after the signed Release APK and Android TV OFF/ON emulator tests pass.
-EOF
-)"
+          NOTES="$(printf '%s\n' \
+            "Custom LAMPA build based on upstream $UPSTREAM_TAG." \
+            "" \
+            "- APK versionName is inherited from lampa-app/LAMPA main: $VERSION" \
+            "- APK versionCode is inherited from the origin/main commit count" \
+            "- In-app updates are read from ivzaislu/LAMPA_apk releases" \
+            "- Android TV Home channels are disabled by default and protected by CI runtime tests" \
+            "- Release signing certificate is verified against RELEASE_CERT_SHA256" \
+            "" \
+            "This custom release is published only after the signed Release APK and Android TV OFF/ON emulator tests pass.")"
 
           gh release create "$CUSTOM_TAG" \
             "$RELEASE_APK" \
