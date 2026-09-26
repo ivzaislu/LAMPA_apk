@@ -11,6 +11,7 @@ import androidx.tvprovider.media.tv.TvContractCompat
 import top.rootu.lampa.App
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.channels.ChannelManager
+import top.rootu.lampa.channels.TvChannelsPolicy
 import top.rootu.lampa.channels.WatchNext
 import top.rootu.lampa.helpers.ChannelHelper
 import top.rootu.lampa.helpers.Helpers
@@ -27,7 +28,7 @@ class HomeWatch() : BroadcastReceiver() {
 
         val action = intent.action
 
-        if (action == null || !(isTvContentProviderAvailable))
+        if (action == null || !TvChannelsPolicy.requestedEnabled || !isTvContentProviderAvailable)
             return
 
         val watchNextId = intent.getLongExtra(TvContract.EXTRA_WATCH_NEXT_PROGRAM_ID, -1L)
