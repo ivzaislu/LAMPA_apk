@@ -60,6 +60,7 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     fun update(name: String, list: List<LampaCard>) {
+        if (!TvChannelsPolicy.enabled) return
         if (BuildConfig.DEBUG) Log.d(TAG, "update($name, ${list.size} items)")
         removeLostChannels()
 
@@ -88,6 +89,7 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     fun deleteFromChannel(channelId: Long, movieId: String) {
+        if (!TvChannelsPolicy.enabled) return
         findProgramByMovieId(channelId, movieId)?.let { program ->
             removeProgram(program.id)
         }
@@ -162,6 +164,7 @@ object ChannelManager {
 
     @SuppressLint("RestrictedApi")
     fun getInternalIdAndChanIdFromPreviewProgramId(previewProgramId: Long): Pair<String?, Long?> {
+        if (!TvChannelsPolicy.enabled) return Pair(null, null)
         return App.context.contentResolver.query(
             TvContractCompat.buildPreviewProgramUri(previewProgramId), null, null, null, null
         )?.use { cursor ->
