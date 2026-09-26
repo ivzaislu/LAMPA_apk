@@ -1,23 +1,29 @@
-# Android TV: политика обновления каналов
+# Android TV: каналы и Watch Next в кастомной ветке
 
-Эта памятка фиксирует поведение проверенного кастомного APK, снятого с приставки 26 сентября 2026 года.
+Эта памятка фиксирует кастомизацию Android TV Home для `ivzaislu/LAMPA_apk`.
 
-## Зачем это сделано
+## История решения
 
-Полное фоновое обновление Android TV-каналов запускало сразу обработку всех каналов и создавало лишнюю нагрузку на `TvProvider` / `ContentResolver`. На приставке это мешало основной работе Lampa и могло задерживать обновление главного канала рекомендаций.
+Старый рабочий APK, снятый с приставки 26 сентября 2026 года, показал:
 
-Рабочая схема из старого кастомного APK была проще:
+- все 9 каналов в приложении оставались в коде;
+- `LampaChannels.update()`, `updateRecsChannel()` и `updateChanByName()` присутствовали;
+- код 15-минутного `JobScheduler` тоже присутствовал;
+- но публичные `Scheduler.scheduleUpdate()` и `Scheduler.updateContent()` сразу завершались.
 
-- **не запускать массовое/периодическое обновление всех каналов**;
-- **оставить точечные event-driven обновления**, которые вызываются самой Lampa после реальных изменений.
+То есть рабочая кастомизация не удаляла каналы из проекта — она не давала запускаться массовому Scheduler.
 
-## Что должно быть отключено
+## Текущая схема
+
+Новая ветка делает это управляемо и жёстче.
+
+### 1. Массовый Scheduler всегда отключён
 
 Файл:
 
 `app/src/main/java/top/rootu/lampa/sched/Scheduler.kt`
 
-Два публичных метода должны оставаться заглушками:
+Публичные точки входа остаются заглушками:
 
 ```kotlin
 fun scheduleUpdate(sched: Boolean) {
@@ -29,68 +35,161 @@ fun updateContent(sync: Boolean) {
 }
 ```
 
-Именно эти две заглушки воспроизводят поведение старого APK.
+Поэтому не запускаются:
 
-Это отключает:
-
-- периодический `JobScheduler` для полного обновления;
+- периодический full refresh;
 - full refresh при первом запуске;
-- full refresh после загрузки Lampa;
-- full refresh через `Scheduler.scheduleUpdate(false)`;
-- full refresh из `BootReceiver`;
+- full refresh после загрузки приложения;
+- full refresh через `BootReceiver`;
 - full refresh после `ACTION_INITIALIZE_PROGRAMS`;
-- выполнение полного обновления из `ContentJobService`.
+- массовый refresh через `ContentJobService`.
 
-Внутренние методы `jobScheduler()`, `alarmScheduler()` и старый код полного обновления можно оставить в файле: они недостижимы через публичные точки входа и так проще переносить патч на новые upstream-версии.
+### 2. Код каналов НЕ удаляется
 
-## Что НЕЛЬЗЯ вырезать
+Нельзя вырезать:
 
-Точечные обновления должны продолжать работать.
+- `ChannelManager`;
+- `LampaChannels`;
+- `WatchNext`;
+- provider-классы;
+- event-driven вызовы из `AndroidJS`.
 
-В `AndroidJS.kt` оставить:
+Это позволяет переносить кастомизацию на новые upstream-версии без восстановления удалённого кода.
 
-- `LampaChannels.updateRecsChannel()` после запуска проигрывания/торрента;
-- `updateChanByName(where)` для `history`, `book`, `like`, `look`, `viewed`, `scheduled`, `continued`, `thrown`;
-- `updateWatchNext()` для `wath`.
+### 3. Есть единый master switch
 
-Также не нужно урезать список каналов в `LampaChannels.kt` и не нужно удалять сами provider-классы. Старый рабочий APK содержал все каналы; отключён был именно глобальный Scheduler.
+Файл:
 
-## Как переносить на будущую версию
+`app/src/main/java/top/rootu/lampa/channels/TvChannelsPolicy.kt`
 
-После обновления/rebase от upstream:
+Настройка хранится в:
 
-1. Открыть `Scheduler.kt`.
-2. Снова сделать `scheduleUpdate(...)` немедленным `return`.
-3. Снова сделать `updateContent(...)` немедленным `return`.
-4. Проверить, что вызовы `updateRecsChannel()`, `updateChanByName()` и `updateWatchNext()` в `AndroidJS.kt` сохранены.
-5. Не переносить дополнительные изменения в `ChannelManager.kt` или `LampaChannels.kt`, если для них нет отдельной подтверждённой причины.
-6. Собрать APK и проверить на Android TV.
+`Prefs.androidTvChannelsEnabled`
 
-## Быстрая проверка после сборки
+Ключ:
 
-Ожидаемое поведение:
+`android_tv_channels_enabled`
 
-- простое открытие Lampa не должно запускать массовую перезапись всех Android TV-каналов;
-- ожидание 15+ минут не должно само запускать полный refresh;
-- старт просмотра должен по-прежнему обновлять `recs`;
-- изменение избранного/истории должно обновлять только соответствующий канал;
-- Watch Next должен обновляться по событию.
+**Значение по умолчанию: `false` (OFF).**
 
-Если после обновления upstream снова появляются тормоза, первым делом проверить, не вернулась ли логика в `Scheduler.scheduleUpdate()` или `Scheduler.updateContent()`.
+В меню приложения на Android TV есть пункт:
 
-## Источник решения
+- «Включить каналы Android TV»
+- «Выключить каналы Android TV»
 
-Старый кастомный APK с приставки показал, что:
+### 4. Что означает OFF
 
-- все 9 каналов в нём присутствуют;
-- `LampaChannels.update()`, `updateRecsChannel()`, `updateChanByName()` присутствуют;
-- `JobScheduler` с 15-минутным периодом присутствует как код;
-- но публичные `Scheduler.scheduleUpdate()` и `Scheduler.updateContent()` завершаются сразу, поэтому массовый Scheduler фактически отключён.
+OFF означает полное отключение интеграции Lampa с Android TV Home:
 
-Это и является эталонной кастомизацией для этой ветки.
+- `ChannelManager.update()` не пишет preview channels;
+- `LampaChannels.update()` не запускается;
+- `updateRecsChannel()` не работает;
+- `updateChanByName()` не работает;
+- `WatchNext.add/rem/updateWatchNext/addLastPlayed/removeContinueWatch` не работают;
+- `AndroidJS` не создаёт отложенные coroutine для обновления каналов;
+- `MainActivity.updatePlayNext()` сразу выходит;
+- старый pre-O путь `RecsService.updateRecs()` не вызывается из player/torrent events.
 
-## CI-сборка этой ветки
+При выключении вызывается очистка опубликованных данных:
 
-Для проверки кастомизации в ветке есть `.github/workflows/custom-apk.yml`. Он собирает `Lite Debug APK` без публикации GitHub Release и сохраняет APK как workflow artifact. Debug APK подписывается стандартным debug-ключом CI, поэтому поверх установленного release APK с другой подписью его обычно нужно ставить после удаления старой версии.
+- удаляются preview-каналы Lampa;
+- удаляются Watch Next rows, принадлежащие Lampa.
 
-Примечание по CI: проект вычисляет версию через git refs, поэтому checkout должен быть с `fetch-depth: 0`. Кроме того, `app/build.gradle` конфигурирует release signing даже при debug-сборке, поэтому workflow создаёт временный локальный keystore только для прохождения Gradle-конфигурации.
+При каждом запуске приложения, если настройка OFF, очистка повторяется безопасно. Это нужно, чтобы убрать хвосты от старых APK.
+
+### 5. Что означает ON
+
+ON возвращает только **event-driven** интеграцию:
+
+- запуск плеера/торрента может обновить `recs`;
+- изменения `history/book/like/look/viewed/scheduled/continued/thrown` обновляют соответствующий канал;
+- Watch Next обновляется по событию.
+
+При этом массовый Scheduler остаётся отключённым. То есть ON не возвращает 15-минутные фоновые full refresh.
+
+## Где стоят защиты
+
+Защита намеренно стоит в нескольких слоях.
+
+### Верхний слой
+
+`AndroidJS.kt`
+
+Не создаёт работу каналов при OFF.
+
+`MainActivity.kt`
+
+Не выполняет Play Next обработку при OFF и содержит пользовательский переключатель.
+
+### Средний слой
+
+`LampaChannels.kt`
+
+Все публичные методы проверяют `TvChannelsPolicy.enabled`.
+
+### Нижний слой
+
+`ChannelManager.kt` и `WatchNext.kt`
+
+Даже если новый код в будущем случайно вызовет их напрямую, запись в TvProvider блокируется при OFF.
+
+Это сделано специально: одного guard только в UI недостаточно для будущих upstream-изменений.
+
+## Как переносить на новую upstream-версию
+
+После merge/rebase с новой Lampa:
+
+1. Проверить `Scheduler.kt`: `scheduleUpdate()` и `updateContent()` должны оставаться заглушками.
+2. Проверить наличие `Prefs.androidTvChannelsEnabled`, default = `false`.
+3. Проверить `TvChannelsPolicy.kt`.
+4. Проверить guards в:
+   - `AndroidJS.kt`;
+   - `MainActivity.updatePlayNext()`;
+   - `LampaChannels.kt`;
+   - `ChannelManager.kt`;
+   - `WatchNext.kt`.
+5. Проверить, что пункт ON/OFF всё ещё есть в `MainActivity.showMenuDialog()`.
+6. Проверить, что OFF вызывает `TvChannelsPolicy.clearPublishedContent()`.
+7. Не удалять классы каналов физически.
+8. Собрать APK и проверить на приставке.
+
+## Проверка на приставке
+
+### OFF
+
+После установки/запуска:
+
+- каналы Lampa не должны появляться или обновляться;
+- Watch Next от Lampa должен быть очищен;
+- запуск фильма/торрента не должен создавать обновление `recs`;
+- изменение избранного/истории не должно создавать/обновлять канал;
+- через 15+ минут не должно происходить фонового refresh.
+
+### ON
+
+После включения через меню:
+
+- массового refresh сразу не требуется;
+- после реального события соответствующий канал должен обновиться;
+- `recs` должен обновляться после событий просмотра;
+- Watch Next должен снова реагировать на события.
+
+## CI-сборка
+
+В ветке есть:
+
+`.github/workflows/custom-apk.yml`
+
+Workflow собирает `Lite Debug APK` и сохраняет его как artifact.
+
+Особенности CI:
+
+- `fetch-depth: 0` обязателен, потому что версия вычисляется из git refs;
+- `app/build.gradle` конфигурирует release signing даже при debug build, поэтому workflow создаёт временный локальный keystore;
+- debug APK подписан debug-ключом и обычно не устанавливается поверх release APK с другой подписью без удаления старой версии.
+
+## Главное правило
+
+**Не вырезать каналы. Отключать их через master switch и оставлять Scheduler заглушенным.**
+
+Так будущие версии проще обновлять, сравнивать и восстанавливать.
