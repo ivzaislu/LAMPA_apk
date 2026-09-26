@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -24,6 +26,14 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+
+      - name: Prepare temporary signing config
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/lampa-ci.jks" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/lampa-ci.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_PASSWORD=android" >> "$GITHUB_ENV"
 
       - name: Grant execute permission for Gradle
         run: chmod +x gradlew
