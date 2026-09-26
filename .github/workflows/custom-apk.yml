@@ -307,9 +307,9 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$CUSTOM_TAG" >/dev/null 2>&1; then
+          if gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $CUSTOM_TAG already exists; nothing to publish."
-            gh release view "$CUSTOM_TAG" --json url --jq .url
+            gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
             exit 0
           fi
 
@@ -338,6 +338,7 @@ jobs:
             "$RELEASE_REPORT" \
             --target "$GITHUB_SHA" \
             --title "$CUSTOM_TAG" \
-            --notes "$NOTES"
+            --notes "$NOTES" \
+            --repo "$GITHUB_REPOSITORY"
 
-          gh release view "$CUSTOM_TAG" --json url --jq .url
+          gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
