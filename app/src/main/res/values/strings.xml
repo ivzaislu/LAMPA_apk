@@ -138,4 +138,8 @@
     <string name="net_error_network_changed">Network changed</string>
     <string name="net_error_blocked_by_admin">Blocked by administrator</string>
     <string name="net_error_blocked_enrollment_check">Enrollment check pending</string>
+    <string name="tv_channels_enable">Enable Android TV channels</string>
+    <string name="tv_channels_disable">Disable Android TV channels</string>
+    <string name="tv_channels_enabled_toast">Android TV channels enabled</string>
+    <string name="tv_channels_disabled_toast">Android TV channels fully disabled</string>
 </resources>

@@ -20,6 +20,11 @@
 System requirements: Android 4.1+ (API level 16+)
 </p>
 
-### Last release links:
-- [Release page](https://github.com/lampa-app/LAMPA/releases/latest)
-- [Direct apk download link](https://github.com/lampa-app/LAMPA/releases/latest/download/app-lite-release.apk)
+### Custom release links:
+- [Custom releases](https://github.com/ivzaislu/LAMPA_apk/releases)
+- Updates inside the custom Lite APK are also read from this repository.
+
+### Custom build behavior
+- [Как устроена кастомная сборка целиком](docs/CUSTOM_BUILD.md)
+- [Android TV Home: политика каналов](docs/ANDROID_TV_CHANNEL_REFRESH.md)
+- [Upstream sync, версия и release channel](docs/UPSTREAM_SYNC_AND_RELEASE.md)

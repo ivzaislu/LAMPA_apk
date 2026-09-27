@@ -22,7 +22,7 @@ def getVersionName = { ->
     try {
         def stdout = new ByteArrayOutputStream()
         exec {
-            commandLine 'git', 'describe', '--tags', '--dirty'
+            commandLine 'git', 'describe', '--tags', '--abbrev=0', 'origin/main'
             standardOutput = stdout
         }
         return stdout.toString().trim().replaceFirst("^v", "")
@@ -62,6 +62,8 @@ android {
         versionCode getVersionCode()
         versionName getVersionName()
         buildConfigField "String", "REPO_ID", "\"${getRepoId()}\""
+        buildConfigField "String", "UPDATE_REPO_ID", "\"ivzaislu/LAMPA_apk\""
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true // required when setting minSdkVersion to 20 or lower
         // Use SupportLibrary for vectors
         vectorDrawables.useSupportLibrary = true
@@ -202,6 +204,8 @@ dependencies {
     implementation "com.airbnb.android:lottie:$lottieVersion"
     implementation 'info.guardianproject.netcipher:netcipher:2.1.0' // SSL / TLS
     implementation 'junit:junit:4.13.2' // For Crosswalk compatibility
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
     implementation 'org.conscrypt:conscrypt-android:2.5.3' // for TLS v1.3 on API < 29
     //noinspection GradleDependency 1.8.1 fails on build with old gradle
     implementation 'org.mozilla:rhino:1.7.15' // JavaScript to run PAC file to get correct proxies

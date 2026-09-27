@@ -18,7 +18,7 @@ object LampaChannels {
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun update(sync: Boolean = true) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
 
         synchronized(lock) {
             if (BuildConfig.DEBUG) Log.d(TAG, "update(sync: $sync)")
@@ -107,7 +107,7 @@ object LampaChannels {
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun updateRecsChannel() {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         synchronized(lock) {
             if (BuildConfig.DEBUG) Log.d(TAG, "updateRecsChannel()")
             val list =
@@ -118,7 +118,7 @@ object LampaChannels {
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun updateChanByName(name: String) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         synchronized(lock) {
             if (BuildConfig.DEBUG) Log.d(TAG, "updateChanByName($name)")
             val list = LampaProvider.get(name, false)?.items.orEmpty()
