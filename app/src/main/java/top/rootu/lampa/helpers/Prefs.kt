@@ -30,6 +30,7 @@ object Prefs {
     private const val IPTV_PLAYER = "iptv_player"
     private const val PLAYER_KEEP_CONN_KEY = "player_keep_connection"
     private const val KODI_PLAYLIST_ENABLED_KEY = "kodi_playlist_enabled"
+    private const val ANDROID_TV_CHANNELS_ENABLED_KEY = "android_tv_channels_enabled"
     private const val LAMPA_SOURCE = "source"
     private const val APP_BROWSER = "browser"
     private const val APP_LANG = "lang"
@@ -85,6 +86,12 @@ object Prefs {
     var Context.kodiPlaylistEnabled: Boolean
         get() = appPrefs.getBoolean(KODI_PLAYLIST_ENABLED_KEY, true)
         set(value) = appPrefs.edit().putBoolean(KODI_PLAYLIST_ENABLED_KEY, value).apply()
+
+    // Custom Android TV integration switch. Default is OFF in this branch so
+    // TvProvider writes cannot compete with Lampa unless explicitly enabled.
+    var Context.androidTvChannelsEnabled: Boolean
+        get() = appPrefs.getBoolean(ANDROID_TV_CHANNELS_ENABLED_KEY, false)
+        set(value) = appPrefs.edit { putBoolean(ANDROID_TV_CHANNELS_ENABLED_KEY, value) }
 
     var Context.lampaSource: String
         get() = appPrefs.getString(LAMPA_SOURCE, "tmdb") ?: "tmdb"

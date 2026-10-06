@@ -1,0 +1,74 @@
+name: Sync upstream main
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Rebuild single custom commit on upstream main
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: optimize-tv-channel-updates
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+
+          UPSTREAM_TAG="$(git describe --tags --abbrev=0 upstream/main)"
+          case "$UPSTREAM_TAG" in
+            v1.*) ;;
+            *)
+              echo "::error::Upstream main moved outside the supported 1.x line: $UPSTREAM_TAG"
+              exit 1
+              ;;
+          esac
+          echo "Upstream version: $UPSTREAM_TAG"
+
+      - name: Fast-forward fork main
+        run: git push origin upstream/main:refs/heads/main
+
+      - name: Rebuild custom branch as one commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OLD_HEAD="$(git rev-parse HEAD)"
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Custom branch already contains current upstream/main."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Build and validate the merged tree without creating a merge commit.
+          git merge --no-commit --no-ff upstream/main
+
+          python3 scripts/verify_tv_channels_off.py
+          python3 scripts/verify_update_channel.py
+
+          TREE_SHA="$(git write-tree)"
+          NEW_COMMIT="$(
+            printf '%s\n\n%s\n'               'Maintain custom Android TV and release behavior'               'Reapply the verified custom patch on the latest upstream main.'             | git commit-tree "$TREE_SHA" -p upstream/main
+          )"
+
+          echo "Old custom head: $OLD_HEAD"
+          echo "New custom head: $NEW_COMMIT"
+          echo "Upstream parent:  $(git rev-parse upstream/main)"
+
+          git push             --force-with-lease=refs/heads/optimize-tv-channel-updates:"$OLD_HEAD"             origin "$NEW_COMMIT":refs/heads/optimize-tv-channel-updates
