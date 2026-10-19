@@ -1,0 +1,340 @@
+name: Custom APK
+
+on:
+  push:
+    branches:
+      - optimize-tv-channel-updates
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: custom-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build custom Lite debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main and tags
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+          git describe --tags --abbrev=0 origin/main
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Prepare temporary signing config
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/lampa-ci.jks" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/lampa-ci.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+
+      - name: Grant execute permission for Gradle
+        run: chmod +x gradlew
+
+      - name: Verify custom invariants
+        run: |
+          python3 scripts/verify_tv_channels_off.py
+          python3 scripts/verify_update_channel.py
+
+      - name: Compile APK and instrumentation tests
+        run: ./gradlew assembleLiteDebug assembleLiteDebugAndroidTest --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lampa-custom-lite-debug
+          path: app/build/outputs/apk/lite/debug/app-lite-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-tv-channels-off:
+    name: Verify Android TV channels are really OFF
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main and tags
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+          git describe --tags --abbrev=0 origin/main
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Prepare temporary signing config
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/lampa-ci.jks" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/lampa-ci.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+          echo "RELEASE_SIGN_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+
+      - name: Grant execute permission for Gradle
+        run: chmod +x gradlew
+
+      - name: Verify custom invariants before emulator
+        run: |
+          python3 scripts/verify_tv_channels_off.py
+          python3 scripts/verify_update_channel.py
+
+      - name: Run OFF/ON tests on Android TV emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          disable-animations: true
+          script: ./gradlew connectedLiteDebugAndroidTest --stacktrace
+
+  release:
+    name: Build signed Lite release APK
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      RELEASE_SIGN_KEY_ALIAS: ${{ secrets.RELEASE_SIGN_KEY_ALIAS }}
+      RELEASE_SIGN_KEY_PASSWORD: ${{ secrets.RELEASE_SIGN_KEY_PASSWORD }}
+      RELEASE_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+      OLD_APK_CERT_SHA256: c8066a995babbd0879cc3534ea92502e7ca220391ead03a3314c24d58acce370
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main and tags
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+          git describe --tags --abbrev=0 origin/main
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Restore release keystore from GitHub Secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD RELEASE_SIGN_KEY_ALIAS RELEASE_SIGN_KEY_PASSWORD RELEASE_CERT_SHA256; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required GitHub Actions secret $name is missing or empty"
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/lampa-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_SIGN_KEY_ALIAS" >/dev/null
+
+          echo "KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Grant execute permission for Gradle
+        run: chmod +x gradlew
+
+      - name: Verify custom invariants
+        run: |
+          python3 scripts/verify_tv_channels_off.py
+          python3 scripts/verify_update_channel.py
+
+      - name: Build signed Lite release APK
+        run: ./gradlew assembleLiteRelease --stacktrace
+
+      - name: Verify inherited upstream version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/lite/release/app-lite-release.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          EXPECTED_NAME="$(git describe --tags --abbrev=0 origin/main | sed 's/^v//')"
+          EXPECTED_CODE="$(git rev-list --count origin/main)"
+          BADGING="$("$AAPT" dump badging "$APK" | head -n 1)"
+          ACTUAL_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+          ACTUAL_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+
+          echo "Upstream main versionName: $EXPECTED_NAME"
+          echo "Release APK versionName:    $ACTUAL_NAME"
+          echo "Upstream main versionCode: $EXPECTED_CODE"
+          echo "Release APK versionCode:   $ACTUAL_CODE"
+
+          test "$ACTUAL_NAME" = "$EXPECTED_NAME"
+          test "$ACTUAL_CODE" = "$EXPECTED_CODE"
+
+      - name: Verify APK signature and certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/lite/release/app-lite-release.apk"
+          test -s "$APK"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner was not found"
+            exit 1
+          fi
+
+          REPORT="app/build/outputs/apk/lite/release/release-signing.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$REPORT"
+
+          ACTUAL_CERT="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$REPORT" \
+            | head -n 1 \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+
+          if [ -z "$ACTUAL_CERT" ]; then
+            echo "::error::Could not read signer SHA-256 from APK"
+            exit 1
+          fi
+
+          echo "APK signer SHA-256: $ACTUAL_CERT" | tee -a "$REPORT"
+
+          if [ "$ACTUAL_CERT" = "$OLD_APK_CERT_SHA256" ]; then
+            echo "Certificate matches the previously uploaded old APK." | tee -a "$REPORT"
+          else
+            echo "::warning::Signer does NOT match the previously uploaded old APK; this release cannot update that APK in place." | tee -a "$REPORT"
+            echo "Old APK certificate: $OLD_APK_CERT_SHA256" | tee -a "$REPORT"
+          fi
+
+          EXPECTED_CERT="$(printf '%s' "$RELEASE_CERT_SHA256" \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+          if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+            echo "::error::Release APK certificate does not match RELEASE_CERT_SHA256"
+            echo "Expected: $EXPECTED_CERT"
+            echo "Actual:   $ACTUAL_CERT"
+            exit 1
+          fi
+          echo "Certificate matches RELEASE_CERT_SHA256." | tee -a "$REPORT"
+
+          sha256sum "$APK" | tee "app/build/outputs/apk/lite/release/app-lite-release.apk.sha256"
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lampa-custom-lite-release
+          path: |
+            app/build/outputs/apk/lite/release/app-lite-release.apk
+            app/build/outputs/apk/lite/release/app-lite-release.apk.sha256
+            app/build/outputs/apk/lite/release/release-signing.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish custom GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      - release
+      - verify-tv-channels-off
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main and tags
+        run: |
+          git remote add upstream https://github.com/lampa-app/LAMPA.git || true
+          git fetch --force upstream main --tags
+
+      - name: Download verified release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lampa-custom-lite-release
+          path: release-artifact
+
+      - name: Publish release for upstream main version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_TAG="$(git describe --tags --abbrev=0 origin/main)"
+          case "$UPSTREAM_TAG" in
+            v1.*) ;;
+            *)
+              echo "::error::Refusing to auto-publish unsupported upstream version: $UPSTREAM_TAG"
+              exit 1
+              ;;
+          esac
+
+          if ! git merge-base --is-ancestor origin/main "$GITHUB_SHA"; then
+            echo "::error::Custom branch does not contain current origin/main"
+            exit 1
+          fi
+
+          CUSTOM_TAG="${UPSTREAM_TAG}-custom"
+          VERSION="${UPSTREAM_TAG#v}"
+          APK="$(find release-artifact -type f -name 'app-lite-release.apk' -print -quit)"
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo "::error::Verified release APK was not found"
+            exit 1
+          fi
+
+          if gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $CUSTOM_TAG already exists; cleaning technical assets."
+            gh release delete-asset "$CUSTOM_TAG" "LAMPA-${CUSTOM_TAG}-signing.txt" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
+            gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
+            exit 0
+          fi
+
+          mkdir -p publish
+          RELEASE_APK="publish/LAMPA-${CUSTOM_TAG}.apk"
+          RELEASE_SHA="publish/LAMPA-${CUSTOM_TAG}.apk.sha256"
+          cp "$APK" "$RELEASE_APK"
+          sha256sum "$RELEASE_APK" > "$RELEASE_SHA"
+
+          NOTES="$(printf '%s\n' \
+            "Custom LAMPA build based on upstream $UPSTREAM_TAG." \
+            "" \
+            "- APK versionName is inherited from lampa-app/LAMPA main: $VERSION" \
+            "- APK versionCode is inherited from the origin/main commit count" \
+            "- In-app updates are read from ivzaislu/LAMPA_apk releases" \
+            "- Android TV Home channels are disabled by default and protected by CI runtime tests" \
+            "- Release signing certificate is verified against RELEASE_CERT_SHA256" \
+            "" \
+            "This custom release is published only after the signed Release APK and Android TV OFF/ON emulator tests pass.")"
+
+          gh release create "$CUSTOM_TAG" \
+            "$RELEASE_APK" \
+            "$RELEASE_SHA" \
+            --target "$GITHUB_SHA" \
+            --title "$CUSTOM_TAG" \
+            --notes "$NOTES" \
+            --repo "$GITHUB_REPOSITORY"
+
+          gh release view "$CUSTOM_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url

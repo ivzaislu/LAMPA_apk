@@ -44,7 +44,7 @@ object WatchNext {
 
     @SuppressLint("RestrictedApi")
     fun add(card: LampaCard) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         card.id?.let { movieId ->
             val existingProgram = findProgramByMovieId(movieId)
             val removed = removeIfNotBrowsable(existingProgram)
@@ -72,12 +72,12 @@ object WatchNext {
     }
 
     fun rem(movieId: String?) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         movieId?.let { deleteFromWatchNext(it) }
     }
 
     suspend fun updateWatchNext() {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         val context = App.context
         val deleted = removeStale()
         debugLog(TAG, "updateWatchNext() WatchNext stale cards removed: $deleted")
@@ -121,7 +121,7 @@ object WatchNext {
     }
 
     fun addLastPlayed(card: LampaCard, lampaActivity: String) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
 
         card.id?.let { movieId ->
             // deleteFromWatchNext(RESUME_ID) // Clear any existing continue watch
@@ -139,13 +139,14 @@ object WatchNext {
     }
 
     fun removeContinueWatch(card: LampaCard) {
-        if (!isTvContentProviderAvailable) return
+        if (!TvChannelsPolicy.enabled) return
         // deleteFromWatchNext(RESUME_ID)
         card.id?.let { movieId -> deleteFromWatchNext(movieId) }
     }
 
     @SuppressLint("RestrictedApi")
     fun getInternalIdFromWatchNextProgramId(watchNextId: Long): String? {
+        if (!TvChannelsPolicy.enabled) return null
         return App.context.contentResolver.query(
             buildWatchNextProgramUri(watchNextId), null, null, null, null
         )?.use { cursor ->
@@ -158,6 +159,7 @@ object WatchNext {
 
     @SuppressLint("RestrictedApi")
     fun getCardFromWatchNextProgramId(watchNextId: Long): LampaCard? {
+        if (!TvChannelsPolicy.enabled) return null
         return App.context.contentResolver.query(
             buildWatchNextProgramUri(watchNextId), null, null, null, null
         )?.use { cursor ->
@@ -167,6 +169,39 @@ object WatchNext {
                 getJson(json, LampaCard::class.java)
             } else null
         }
+    }
+
+    /**
+     * Remove only Watch Next rows published by this application.
+     * This is used when the Android TV integration is switched OFF.
+     */
+    @SuppressLint("RestrictedApi")
+    fun clearAll(): Int {
+        if (!isTvContentProviderAvailable) return 0
+
+        var removed = 0
+        App.context.contentResolver.query(
+            TvContractCompat.WatchNextPrograms.CONTENT_URI,
+            null,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                do {
+                    val program = WatchNextProgram.fromCursor(cursor)
+                    val intent = program.intent
+                    val belongsToLampa =
+                        intent?.component?.packageName == App.context.packageName ||
+                                intent?.getStringExtra(LAMPA_CARD_KEY) != null
+
+                    if (belongsToLampa) {
+                        removed += removeProgram(program.id)
+                    }
+                } while (cursor.moveToNext())
+            }
+        }
+        return removed
     }
 
     @SuppressLint("RestrictedApi")

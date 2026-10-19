@@ -27,8 +27,8 @@ import javax.net.ssl.SSLSocketFactory
 
 
 object Updater {
-    private const val RELEASE_LINK =
-        "https://api.github.com/repos/lampa-app/LAMPA/releases"
+    private val RELEASE_LINK =
+        "https://api.github.com/repos/${BuildConfig.UPDATE_REPO_ID}/releases"
     private var releases: Releases? = null
     private var newVersion: Release? = null
 
@@ -57,6 +57,7 @@ object Updater {
             releases = getJson(body, Releases::class.java)
             releases?.let {
                 it.forEach { rel ->
+                    if (rel.draft || rel.prerelease) return@forEach
                     if (isNewerVersion(rel.tag_name)) {
                         newVersion = rel
                         connection.disconnect()
@@ -135,10 +136,12 @@ object Updater {
             newVersion?.let { rel ->
                 if (file.exists())
                     file.delete()
-                var link = ""
-                for (asset in rel.assets) {
-                    link = asset.browser_download_url
+                val asset = rel.assets.firstOrNull {
+                    it.name.equals("app-lite-release.apk", ignoreCase = true)
+                } ?: rel.assets.firstOrNull {
+                    it.name.endsWith(".apk", ignoreCase = true)
                 }
+                val link = asset?.browser_download_url.orEmpty()
                 if (link.isNotEmpty()) {
                     try {
                         val url = URL(link)
