@@ -20,13 +20,13 @@ import java.util.Locale
 import top.rootu.lampa.browser.Browser
 import top.rootu.lampa.channels.LampaChannels
 import top.rootu.lampa.channels.PluginChannels
+import top.rootu.lampa.channels.TvChannelsPolicy
 import top.rootu.lampa.channels.LampaChannels.updateChanByName
 import top.rootu.lampa.channels.WatchNext.updateWatchNext
 import top.rootu.lampa.content.LampaProvider
 import top.rootu.lampa.helpers.AdId
 import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.Helpers.filterValidCubBookmarks
-import top.rootu.lampa.helpers.Helpers.isTvContentProviderAvailable
 import top.rootu.lampa.helpers.Helpers.isValidJson
 import top.rootu.lampa.helpers.Prefs.appLang
 import top.rootu.lampa.helpers.Prefs.lampaSource
@@ -269,13 +269,15 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
                 App.toast(R.string.no_torrent_activity_found, true)
             }
         }
-        // Force update Recs to filter viewed
-        CoroutineScope(Dispatchers.Default).launch {
-            delay(UPDATE_DELAY)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                LampaChannels.updateRecsChannel()
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                RecsService.updateRecs()
+        // Force update Recs to filter viewed only when Android TV integration is enabled.
+        if (TvChannelsPolicy.requestedEnabled) {
+            CoroutineScope(Dispatchers.Default).launch {
+                delay(UPDATE_DELAY)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    LampaChannels.updateRecsChannel()
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    RecsService.updateRecs()
+                }
             }
         }
 
@@ -459,13 +461,15 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
 
         mainActivity.runOnUiThread { mainActivity.runPlayer(jsonObject) }
 
-        // Force update Recs to filter viewed
-        CoroutineScope(Dispatchers.Default).launch {
-            delay(UPDATE_DELAY)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                LampaChannels.updateRecsChannel()
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                RecsService.updateRecs()
+        // Force update Recs to filter viewed only when Android TV integration is enabled.
+        if (TvChannelsPolicy.requestedEnabled) {
+            CoroutineScope(Dispatchers.Default).launch {
+                delay(UPDATE_DELAY)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    LampaChannels.updateRecsChannel()
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    RecsService.updateRecs()
+                }
             }
         }
     }
@@ -524,7 +528,7 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
     @org.xwalk.core.JavascriptInterface
     fun updateChannel(where: String?) {
         // https://github.com/yumata/lampa-source/blob/e5505b0e9cf5f95f8ec49bddbbb04086fccf26c8/src/app.js#L203
-        if (where != null && isTvContentProviderAvailable) {
+        if (where != null && TvChannelsPolicy.enabled) {
             debugLog(TAG, "updateChannel [$where]")
             when (where) {
                 LampaProvider.HIST,
