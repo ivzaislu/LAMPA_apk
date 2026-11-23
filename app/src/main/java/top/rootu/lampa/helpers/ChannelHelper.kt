@@ -16,6 +16,7 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.tvprovider.media.tv.Channel
 import androidx.tvprovider.media.tv.ChannelLogoUtils
 import androidx.tvprovider.media.tv.TvContractCompat
+import top.rootu.lampa.channels.TvChannelsPolicy
 import top.rootu.lampa.App
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.R
@@ -37,6 +38,7 @@ object ChannelHelper {
     @RequiresApi(Build.VERSION_CODES.O)
     private val CHANNELS_PROJECTION = arrayOf(
         TvContractCompat.Channels._ID,
+        TvContractCompat.Channels.COLUMN_PACKAGE_NAME,
         TvContract.Channels.COLUMN_DISPLAY_NAME,
         // TvContract.Channels.COLUMN_INTERNAL_PROVIDER_ID,
         TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA,
@@ -50,35 +52,39 @@ object ChannelHelper {
      */
     @RequiresApi(Build.VERSION_CODES.O)
     fun add(name: String, displayName: String) {
-        val channel = get(name)
-        if (channel != null)
-            return
-        if (BuildConfig.DEBUG) Log.d("ChannelHelper", "add(name: $name, displayName: $displayName)")
-        val builder = Channel.Builder()
-        builder.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-            .setDisplayName(displayName)
-            .setInternalProviderData(name)
-            .setAppLinkIntentUri(Uri.parse("lampa://${BuildConfig.APPLICATION_ID}/update_channel/$name"))
+        synchronized(TvChannelsPolicy.publicationLock) {
+            if (!TvChannelsPolicy.enabled) return
+            val channel = get(name)
+            if (channel != null)
+                return
+            if (BuildConfig.DEBUG) Log.d("ChannelHelper", "add(name: $name, displayName: $displayName)")
+            val builder = Channel.Builder()
+            builder.setType(TvContractCompat.Channels.TYPE_PREVIEW)
+                .setDisplayName(displayName)
+                .setInternalProviderData(name)
+                .setAppLinkIntentUri(Uri.parse("lampa://${BuildConfig.APPLICATION_ID}/update_channel/$name"))
 
-        val channelUri = App.context.contentResolver.insert(
-            TvContractCompat.Channels.CONTENT_URI,
-            builder.build().toContentValues()
-        )
-        val channelId = channelUri?.let { ContentUris.parseId(it) }
+            val channelUri = App.context.contentResolver.insert(
+                TvContractCompat.Channels.CONTENT_URI,
+                builder.build().toContentValues()
+            )
+            val channelId = channelUri?.let { ContentUris.parseId(it) }
 
-        // channel images
-        val icon = when (name) {
-            BOOK -> R.drawable.ch_book_shape
-            HIST -> R.drawable.ch_hist_shape
-            LIKE -> R.drawable.ch_like_shape
-            else -> R.drawable.lampa_logo_round
-        }
-        // val themedContext = ContextThemeWrapper(App.context, R.style.Theme_LAMPA)
-        val bitmap = convertToBitmap(context = App.context, icon)
+            // channel images
+            val icon = when (name) {
+                BOOK -> R.drawable.ch_book_shape
+                HIST -> R.drawable.ch_hist_shape
+                LIKE -> R.drawable.ch_like_shape
+                else -> R.drawable.lampa_logo_round
+            }
+            // val themedContext = ContextThemeWrapper(App.context, R.style.Theme_LAMPA)
+            val bitmap = convertToBitmap(context = App.context, icon)
 
-        if (channelId != null) {
-            ChannelLogoUtils.storeChannelLogo(App.context, channelId, bitmap)
-            TvContractCompat.requestChannelBrowsable(App.context, channelId)
+            if (channelId != null) {
+                ChannelLogoUtils.storeChannelLogo(App.context, channelId, bitmap)
+                TvContractCompat.requestChannelBrowsable(App.context, channelId)
+            }
+
         }
     }
 
@@ -102,7 +108,7 @@ object ChannelHelper {
             if (it.moveToFirst())
                 do {
                     val channel = Channel.fromCursor(it)
-                    if (name == channel.data) {
+                    if (channel.packageName == App.context.packageName && name == channel.data) {
                         return channel
                     }
                 } while (it.moveToNext())
@@ -140,7 +146,7 @@ object ChannelHelper {
             if (it.moveToFirst())
                 do {
                     val channel = Channel.fromCursor(it)
-                    ch.add(channel)
+                    if (channel.packageName == App.context.packageName) ch.add(channel)
                 } while (it.moveToNext())
         }
         return ch
@@ -159,7 +165,7 @@ object ChannelHelper {
             if (it.moveToFirst())
                 do {
                     val channel = Channel.fromCursor(it)
-                    if (channelId == channel.id) {
+                    if (channel.packageName == App.context.packageName && channelId == channel.id) {
                         return channel.data
                     }
                 } while (it.moveToNext())

@@ -126,6 +126,26 @@ class PluginChannelTest {
         assertEquals(listOf("plugin:book"), result)
     }
 
+    @Test fun offSkipsParsingAndSchedulingButOnStillParses() {
+        val executor = DeferredExecutor()
+        var enabled = false
+        var parses = 0
+        val publisher = PluginChannelPublisher(executor, { enabled }, {}, { throw it }, {
+            parses++
+            PluginChannelRequest.parse(it)
+        })
+        assertFalse(publisher.publish(payload))
+        assertFalse(publisher.publish("invalid JSON"))
+        assertFalse(publisher.clear("book"))
+        assertEquals(0, parses)
+        assertEquals(0, executor.size)
+
+        enabled = true
+        assertTrue(publisher.publish(payload))
+        assertEquals(1, parses)
+        assertEquals(1, executor.size)
+    }
+
     private class DeferredExecutor : Executor {
         private val pending = ArrayDeque<Runnable>()
         val size get() = pending.size

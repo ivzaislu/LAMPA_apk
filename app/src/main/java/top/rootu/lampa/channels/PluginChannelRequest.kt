@@ -113,13 +113,22 @@ internal class PluginChannelPublisher(
     private val executor: Executor,
     private val available: () -> Boolean,
     private val write: (PluginChannelRequest) -> Unit,
-    private val onFailure: (Exception) -> Unit
+    private val onFailure: (Exception) -> Unit,
+    private val parse: (String?) -> PluginChannelRequest? = { PluginChannelRequest.parse(it) }
 ) {
     @Synchronized
-    fun publish(json: String?): Boolean = PluginChannelRequest.parse(json)?.let(::submit) ?: false
+    fun publish(json: String?): Boolean = prepare { parse(json) }
 
     @Synchronized
-    fun clear(id: String?): Boolean = PluginChannelRequest.clear(id)?.let(::submit) ?: false
+    fun clear(id: String?): Boolean = prepare { PluginChannelRequest.clear(id) }
+
+    // Reject before parsing payloads or constructing requests on the JS bridge thread.
+    private fun prepare(request: () -> PluginChannelRequest?): Boolean = try {
+        if (!available()) false else request()?.let(::submit) ?: false
+    } catch (error: Exception) {
+        onFailure(error)
+        false
+    }
 
     private fun submit(request: PluginChannelRequest): Boolean {
         return try {
