@@ -31,7 +31,14 @@ import top.rootu.lampa.models.LampaCard
 
 object ChannelManager {
     private const val TAG = "ChannelManager"
-    private val lock = Any()
+    private val lock = TvChannelsPolicy.publicationLock
+
+    private val LAMPA_CHANNEL_NAMES = setOf(
+        RECS, LIKE, BOOK, HIST, LOOK, VIEW, SCHD, CONT, THRW
+    )
+
+    private fun isLampaOwnedChannel(name: String): Boolean =
+        name in LAMPA_CHANNEL_NAMES || name.startsWith("plugin:")
 
     @SuppressLint("RestrictedApi")
     private val PREVIEW_PROGRAM_MAP_PROJECTION = arrayOf(
@@ -61,10 +68,12 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     fun update(name: String, list: List<LampaCard>) {
+        if (!TvChannelsPolicy.enabled) return
         if (BuildConfig.DEBUG) Log.d(TAG, "update($name, ${list.size} items)")
         removeLostChannels()
 
         synchronized(lock) {
+            if (!TvChannelsPolicy.enabled) return
             val displayName = getChannelDisplayName(name)
             val channel = ChannelHelper.get(name) ?: run {
                 ChannelHelper.add(name, displayName)
@@ -77,8 +86,12 @@ object ChannelManager {
             // Add programs to the channel
             if (!Coroutines.running("update_channel_$name")) { // fix duplicates
                 Coroutines.launch("update_channel_$name") {
-                    clearChannelPrograms(channel.id)
-                    addProgramsToChannel(channel.id, name, list)
+                    synchronized(lock) {
+                        if (TvChannelsPolicy.enabled) {
+                            clearChannelPrograms(channel.id)
+                            addProgramsToChannel(channel.id, name, list)
+                        }
+                    }
                 }
             } else {
                 if (BuildConfig.DEBUG) Log.d(TAG, "scope update_channel_$name already active!")
@@ -89,7 +102,9 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     internal fun replacePluginChannel(request: PluginChannelRequest) {
+        if (!TvChannelsPolicy.enabled) return
         synchronized(lock) {
+            if (!TvChannelsPolicy.enabled) return
             require(request.name.startsWith("plugin:"))
             request.items.forEach { it.fixCard() }
             val existing = ChannelHelper.get(request.name)
@@ -121,6 +136,7 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     fun deleteFromChannel(channelId: Long, movieId: String) {
+        if (!TvChannelsPolicy.enabled) return
         findProgramByMovieId(channelId, movieId)?.let { program ->
             removeProgram(program.id)
         }
@@ -129,7 +145,9 @@ object ChannelManager {
     @RequiresApi(Build.VERSION_CODES.O)
     fun removeAll() {
         synchronized(lock) {
-            ChannelHelper.list().forEach { ChannelHelper.rem(it) }
+            ChannelHelper.list()
+                .filter { isLampaOwnedChannel(it.data) }
+                .forEach { ChannelHelper.rem(it) }
         }
     }
 
@@ -180,12 +198,11 @@ object ChannelManager {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun removeLostChannels() {
         synchronized(lock) {
-            // Remove channels with null data
-            ChannelHelper.list().filter { it.internalProviderDataByteArray == null }.forEach {
-                ChannelHelper.rem(it)
-            }
-            // Remove duplicate channels
             val channels = ChannelHelper.list()
+                .filter { isLampaOwnedChannel(it.data) }
+
+            // Remove duplicate Lampa-owned channels only. Do not touch channels
+            // belonging to other applications visible through TvProvider.
             val duplicates = channels.groupBy { it.data }.values.filter { it.size > 1 }
             duplicates.flatten().distinctBy { it.id }.forEach {
                 ChannelHelper.rem(it)
@@ -195,6 +212,7 @@ object ChannelManager {
 
     @SuppressLint("RestrictedApi")
     fun getInternalIdAndChanIdFromPreviewProgramId(previewProgramId: Long): Pair<String?, Long?> {
+        if (!TvChannelsPolicy.enabled) return Pair(null, null)
         return App.context.contentResolver.query(
             TvContractCompat.buildPreviewProgramUri(previewProgramId), null, null, null, null
         )?.use { cursor ->
