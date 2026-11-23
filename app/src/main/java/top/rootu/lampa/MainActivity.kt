@@ -79,6 +79,7 @@ import top.rootu.lampa.browser.SysView
 import top.rootu.lampa.browser.XWalk
 import top.rootu.lampa.channels.ChannelManager.getChannelDisplayName
 import top.rootu.lampa.channels.WatchNext
+import top.rootu.lampa.channels.TvChannelsPolicy
 import top.rootu.lampa.content.LampaProvider
 import top.rootu.lampa.helpers.Backup
 import top.rootu.lampa.helpers.Backup.loadFromBackup
@@ -98,6 +99,7 @@ import top.rootu.lampa.helpers.PermHelpers.verifyMicPermissions
 import top.rootu.lampa.helpers.Prefs
 import top.rootu.lampa.helpers.Prefs.FAV
 import top.rootu.lampa.helpers.Prefs.addUrlHistory
+import top.rootu.lampa.helpers.Prefs.androidTvChannelsEnabled
 import top.rootu.lampa.helpers.Prefs.appBrowser
 import top.rootu.lampa.helpers.Prefs.appLang
 import top.rootu.lampa.helpers.Prefs.appPlayer
@@ -313,6 +315,14 @@ class MainActivity : BaseActivity(),
         setupBrowser()
         setupUI()
         setupIntents()
+
+        // OFF means fully disabled: block future writes and remove stale
+        // built-in/plugin Preview Channels and Watch Next rows from older builds.
+        if (isAndroidTV && !androidTvChannelsEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                TvChannelsPolicy.clearPublishedContent()
+            }
+        }
 
         if (firstRun) {
             CoroutineScope(Dispatchers.Default).launch {
@@ -798,7 +808,7 @@ class MainActivity : BaseActivity(),
                 extras = state.extras
             )
             // Watch Next by this launch's card and activity
-            if (isTvContentProviderAvailable && card != null) launch(Dispatchers.Default) {
+            if (TvChannelsPolicy.enabled && card != null) launch(Dispatchers.Default) {
                 try {
                     when {
                         ended -> WatchNext.removeContinueWatch(card)
@@ -1504,14 +1514,15 @@ class MainActivity : BaseActivity(),
         // Define menu items
         val menuItems = mutableListOf(
             MenuItem(
-                title = if (isTvContentProviderAvailable) {
-                    getString(R.string.update_chan_title)
-                } else if (isAndroidTV) {
-                    getString(R.string.update_home_title)
+                title = if (isAndroidTV) {
+                    getString(
+                        if (androidTvChannelsEnabled) R.string.tv_channels_disable
+                        else R.string.tv_channels_enable
+                    )
                 } else {
                     getString(R.string.close_menu_title)
                 },
-                action = "updateOrClose",
+                action = if (isAndroidTV) "toggleTvChannels" else "updateOrClose",
                 icon = if (isAndroidTV) R.drawable.round_refresh_24 else R.drawable.round_close_24
             ),
             MenuItem(
@@ -1570,9 +1581,24 @@ class MainActivity : BaseActivity(),
                 dialog.dismiss()
                 when (menuItems[which].action) {
                     "updateOrClose" -> {
-                        if (isAndroidTV) {
-                            Scheduler.scheduleUpdate(false)
+                        // Non-TV: selecting this row only closes the menu.
+                    }
+
+                    "toggleTvChannels" -> {
+                        val newState = !androidTvChannelsEnabled
+                        TvChannelsPolicy.setEnabled(newState)
+
+                        if (!newState && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                TvChannelsPolicy.clearPublishedContent()
+                            }
                         }
+
+                        App.toast(
+                            if (newState) R.string.tv_channels_enabled_toast
+                            else R.string.tv_channels_disabled_toast
+                        )
+                        showMenuDialog()
                     }
 
                     "showUrlInputDialog" -> {
@@ -3623,7 +3649,7 @@ class MainActivity : BaseActivity(),
      * Updates Watch Next on Android TV.
      */
     private suspend fun updatePlayNext(ended: Boolean) = withContext(Dispatchers.Default) {
-        if (!isTvContentProviderAvailable) return@withContext
+        if (!TvChannelsPolicy.enabled) return@withContext
         try {
             // The card runPlayer stored with this state came with the play request; the activity can be
             // the page before.

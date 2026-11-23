@@ -135,4 +135,8 @@
     <string name="net_error_network_changed">Сеть изменена</string>
     <string name="net_error_blocked_by_admin">Заблокировано администратором</string>
     <string name="net_error_blocked_enrollment_check">Ожидается проверка регистрации</string>
+    <string name="tv_channels_enable">Включить каналы Android TV</string>
+    <string name="tv_channels_disable">Выключить каналы Android TV</string>
+    <string name="tv_channels_enabled_toast">Каналы Android TV включены</string>
+    <string name="tv_channels_disabled_toast">Каналы Android TV полностью отключены</string>
 </resources>
